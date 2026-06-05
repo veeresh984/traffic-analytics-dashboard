@@ -1,1 +1,504 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
 
+import plotly.express as px
+import plotly.graph_objects as go
+
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+
+# =====================================================
+# PAGE CONFIG
+# =====================================================
+
+st.set_page_config(
+    page_title="Traffic Analytics Dashboard",
+    page_icon="🚦",
+    layout="wide"
+)
+
+# =====================================================
+# CUSTOM CSS
+# =====================================================
+
+st.markdown("""
+<style>
+
+.main {
+    background-color:#f8fafc;
+}
+
+div[data-testid="metric-container"] {
+    background-color:white;
+    border-radius:12px;
+    padding:15px;
+    box-shadow:0px 2px 8px rgba(0,0,0,0.1);
+}
+
+h1,h2,h3 {
+    color:#0f172a;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+# =====================================================
+# DATA LOADER
+# =====================================================
+
+@st.cache_data
+def load_data():
+
+    df = pd.read_csv("Traffic.csv")
+
+    df.columns = df.columns.str.strip()
+
+    # Date Conversion
+    df["Date"] = pd.to_datetime(df["Date"])
+
+    # Time Conversion
+    df["Time"] = pd.to_datetime(df["Time"])
+
+    # Extract Features
+    df["Hour"] = df["Time"].dt.hour
+    df["Month"] = df["Date"].dt.month
+    df["Year"] = df["Date"].dt.year
+
+    return df
+
+df = load_data()
+
+# =====================================================
+# HEADER
+# =====================================================
+
+st.title("🚦 Traffic Analytics Dashboard")
+
+st.markdown("""
+Analyze traffic flow, congestion levels, vehicle composition,
+and traffic trends using interactive analytics.
+""")
+
+# =====================================================
+# SIDEBAR FILTERS
+# =====================================================
+
+st.sidebar.header("Filters")
+
+selected_days = st.sidebar.multiselect(
+    "Select Day",
+    options=sorted(df["Day of the week"].unique()),
+    default=sorted(df["Day of the week"].unique())
+)
+
+selected_situation = st.sidebar.multiselect(
+    "Traffic Situation",
+    options=sorted(df["Traffic Situation"].unique()),
+    default=sorted(df["Traffic Situation"].unique())
+)
+
+filtered_df = df[
+    (df["Day of the week"].isin(selected_days))
+    &
+    (df["Traffic Situation"].isin(selected_situation))
+]
+
+# =====================================================
+# KPI SECTION
+# =====================================================
+
+st.subheader("📊 Executive KPIs")
+
+col1,col2,col3,col4 = st.columns(4)
+
+with col1:
+    st.metric(
+        "Total Vehicles",
+        f"{filtered_df['Total'].sum():,.0f}"
+    )
+
+with col2:
+    st.metric(
+        "Average Traffic",
+        f"{filtered_df['Total'].mean():.2f}"
+    )
+
+with col3:
+    st.metric(
+        "Maximum Traffic",
+        f"{filtered_df['Total'].max():,.0f}"
+    )
+
+with col4:
+    st.metric(
+        "Records",
+        f"{len(filtered_df):,}"
+    )
+
+st.divider()
+
+# =====================================================
+# TRAFFIC TREND
+# =====================================================
+
+st.subheader("📈 Hourly Traffic Trend")
+
+hourly = (
+    filtered_df
+    .groupby("Hour")["Total"]
+    .mean()
+    .reset_index()
+)
+
+fig = px.line(
+    hourly,
+    x="Hour",
+    y="Total",
+    markers=True,
+    title="Average Traffic by Hour"
+)
+
+st.plotly_chart(
+    fig,
+    use_container_width=True
+)
+
+# =====================================================
+# DAILY TRAFFIC
+# =====================================================
+
+st.subheader("📅 Traffic by Day")
+
+daily = (
+    filtered_df
+    .groupby("Day of the week")["Total"]
+    .mean()
+    .reset_index()
+)
+
+fig = px.bar(
+    daily,
+    x="Day of the week",
+    y="Total",
+    color="Total",
+    text_auto=".2f"
+)
+
+st.plotly_chart(
+    fig,
+    use_container_width=True
+)
+
+# =====================================================
+# VEHICLE ANALYSIS
+# =====================================================
+
+st.subheader("🚗 Vehicle Composition")
+
+vehicle_df = pd.DataFrame({
+
+    "Vehicle":[
+        "Cars",
+        "Bikes",
+        "Bus",
+        "Truck"
+    ],
+
+    "Count":[
+        filtered_df["CarCount"].sum(),
+        filtered_df["BikeCount"].sum(),
+        filtered_df["BusCount"].sum(),
+        filtered_df["TruckCount"].sum()
+    ]
+})
+
+col1,col2 = st.columns(2)
+
+with col1:
+
+    fig = px.pie(
+        vehicle_df,
+        names="Vehicle",
+        values="Count",
+        hole=0.5
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+with col2:
+
+    fig = px.bar(
+        vehicle_df,
+        x="Vehicle",
+        y="Count",
+        color="Vehicle",
+        text_auto=True
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+# =====================================================
+# TRAFFIC SITUATION
+# =====================================================
+
+st.subheader("🚥 Traffic Situation Distribution")
+
+situation_df = (
+    filtered_df["Traffic Situation"]
+    .value_counts()
+    .reset_index()
+)
+
+situation_df.columns = [
+    "Traffic Situation",
+    "Count"
+]
+
+fig = px.bar(
+    situation_df,
+    x="Traffic Situation",
+    y="Count",
+    color="Traffic Situation",
+    text_auto=True
+)
+
+st.plotly_chart(
+    fig,
+    use_container_width=True
+)
+
+# =====================================================
+# HEATMAP
+# =====================================================
+
+st.subheader("🔥 Congestion Heatmap")
+
+heatmap_df = (
+    filtered_df
+    .groupby(
+        ["Day of the week","Hour"]
+    )["Total"]
+    .mean()
+    .reset_index()
+)
+
+pivot_table = heatmap_df.pivot(
+    index="Day of the week",
+    columns="Hour",
+    values="Total"
+)
+
+fig = px.imshow(
+    pivot_table,
+    text_auto=True,
+    aspect="auto",
+    title="Average Traffic Heatmap"
+)
+
+st.plotly_chart(
+    fig,
+    use_container_width=True
+)
+
+# =====================================================
+# CORRELATION MATRIX
+# =====================================================
+
+st.subheader("🔍 Correlation Matrix")
+
+corr_columns = [
+    "CarCount",
+    "BikeCount",
+    "BusCount",
+    "TruckCount",
+    "Total"
+]
+
+corr_matrix = filtered_df[corr_columns].corr()
+
+fig = px.imshow(
+    corr_matrix,
+    text_auto=True,
+    aspect="auto"
+)
+
+st.plotly_chart(
+    fig,
+    use_container_width=True
+)
+
+# =====================================================
+# PEAK HOUR ANALYSIS
+# =====================================================
+
+st.subheader("⏰ Peak Traffic Analysis")
+
+peak_hour = (
+    filtered_df
+    .groupby("Hour")["Total"]
+    .mean()
+    .idxmax()
+)
+
+peak_hour_value = (
+    filtered_df
+    .groupby("Hour")["Total"]
+    .mean()
+    .max()
+)
+
+st.success(
+    f"Peak Traffic Hour: {peak_hour}:00 | Average Volume: {peak_hour_value:.2f}"
+)
+
+# =====================================================
+# PEAK DAY
+# =====================================================
+
+peak_day = (
+    filtered_df
+    .groupby("Day of the week")["Total"]
+    .mean()
+    .idxmax()
+)
+
+st.info(
+    f"Busiest Day of Week: {peak_day}"
+)
+
+# =====================================================
+# FORECASTING
+# =====================================================
+
+st.subheader("📊 Traffic Forecast")
+
+forecast_series = (
+    filtered_df
+    .groupby("Hour")["Total"]
+    .mean()
+)
+
+try:
+
+    model = ExponentialSmoothing(
+        forecast_series,
+        trend="add"
+    )
+
+    fitted = model.fit()
+
+    forecast = fitted.forecast(12)
+
+    forecast_df = pd.DataFrame({
+        "Future Hour": range(
+            len(forecast_series),
+            len(forecast_series)+12
+        ),
+        "Forecast Traffic": forecast.values
+    })
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=forecast_series.index,
+            y=forecast_series.values,
+            mode="lines+markers",
+            name="Historical"
+        )
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=forecast_df["Future Hour"],
+            y=forecast_df["Forecast Traffic"],
+            mode="lines+markers",
+            name="Forecast"
+        )
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+except:
+    st.warning("Forecast generation failed.")
+
+# =====================================================
+# BUSINESS INSIGHTS
+# =====================================================
+
+st.subheader("🧠 Automated Insights")
+
+dominant_vehicle = vehicle_df.loc[
+    vehicle_df["Count"].idxmax(),
+    "Vehicle"
+]
+
+least_busy_day = (
+    filtered_df
+    .groupby("Day of the week")["Total"]
+    .mean()
+    .idxmin()
+)
+
+st.markdown(f"""
+### Key Findings
+
+✅ Peak Hour: **{peak_hour}:00**
+
+✅ Peak Day: **{peak_day}**
+
+✅ Least Busy Day: **{least_busy_day}**
+
+✅ Dominant Vehicle Type: **{dominant_vehicle}**
+
+✅ Average Traffic Volume: **{filtered_df['Total'].mean():.2f}**
+
+✅ Maximum Traffic Recorded: **{filtered_df['Total'].max()}**
+
+✅ Total Vehicles Observed: **{filtered_df['Total'].sum():,.0f}**
+""")
+
+# =====================================================
+# DOWNLOAD DATA
+# =====================================================
+
+st.subheader("⬇ Download Filtered Dataset")
+
+csv = filtered_df.to_csv(index=False)
+
+st.download_button(
+    label="Download CSV",
+    data=csv,
+    file_name="traffic_filtered.csv",
+    mime="text/csv"
+)
+
+# =====================================================
+# DATA TABLE
+# =====================================================
+
+with st.expander("View Raw Data"):
+
+    st.dataframe(
+        filtered_df,
+        use_container_width=True
+    )
+
+# =====================================================
+# FOOTER
+# =====================================================
+
+st.markdown("---")
+
+st.caption(
+    "Traffic Analytics Dashboard | Streamlit + Plotly + Pandas"
+)
