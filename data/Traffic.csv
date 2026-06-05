@@ -1,1 +1,5 @@
-
+Time,Date,Day of the week,CarCount,BikeCount,BusCount,TruckCount,Total,Traffic Situation
+00:00:00,10/10/2022,Monday,13,2,2,24,41,normal
+00:15:00,10/10/2022,Monday,14,1,1,36,52,normal
+00:30:00,10/10/2022,Monday,10,2,2,32,46,normal
+...
