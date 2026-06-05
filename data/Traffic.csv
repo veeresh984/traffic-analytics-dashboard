@@ -1,19 +1,1 @@
-import plotly.express as px
 
-hourly = (
-    df.groupby("Hour")["Total"]
-    .mean()
-    .reset_index()
-)
-
-fig = px.line(
-    hourly,
-    x="Hour",
-    y="Total",
-    title="Average Traffic by Hour"
-)
-
-st.plotly_chart(
-    fig,
-    use_container_width=True
-)
